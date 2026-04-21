@@ -1,8 +1,8 @@
-# 🧠 Corrector Ortográfico para Facebook
+# 🧠 Corrector Ortográfico para Redes Sociales (Facebook + Instagram)
 
 ## 📌 Descripción
 
-Extensión de navegador que corrige errores ortográficos en tiempo real mientras escribes en Facebook.
+Extensión de navegador que corrige errores ortográficos en tiempo real mientras escribes en Facebook y Instagram.
 
 Detecta texto en campos editables (comentarios, publicaciones y chat) y sugiere correcciones basadas en análisis lingüístico, permitiendo reemplazar palabras con un solo clic sin interrumpir la escritura.
 
@@ -15,26 +15,26 @@ Detecta texto en campos editables (comentarios, publicaciones y chat) y sugiere 
 * 💡 **Sugerencias inteligentes** (ej: "habia" → "había")
 * 🖱️ **Reemplazo con un clic** sin borrar el contenido
 * ⚡ **Optimizado para inputs dinámicos (`contentEditable`)**
-* 🌐 Compatible con:
+* 🌐 Soporte multi-plataforma:
 
-  * Publicaciones
-  * Comentarios
-  * Chat de Facebook
+  * Facebook (posts, comentarios, chat)
+  * Instagram (comentarios y mensajes web)
 
 ---
 
 ## 🧠 ¿Cómo funciona?
 
 1. La extensión detecta campos editables (`contentEditable`)
-2. Captura el texto mientras el usuario escribe
-3. Envía el contenido a un motor de corrección (LanguageTool)
-4. Recibe errores con:
+2. Identifica la plataforma activa (Facebook o Instagram)
+3. Captura el texto mientras el usuario escribe
+4. Envía el contenido a un motor de corrección (LanguageTool)
+5. Recibe errores con:
 
    * posición (`offset`)
    * longitud (`length`)
    * sugerencias
-5. Muestra visualmente los errores
-6. Permite reemplazar palabras de forma segura sin romper el DOM
+6. Muestra visualmente los errores
+7. Permite reemplazar palabras de forma segura sin romper el DOM
 
 ---
 
@@ -44,6 +44,7 @@ Detecta texto en campos editables (comentarios, publicaciones y chat) y sugiere 
 * Chrome Extension (Manifest V3)
 * API de LanguageTool
 * Manejo avanzado de `contentEditable`
+* Observación de DOM con `MutationObserver`
 
 ---
 
@@ -51,11 +52,12 @@ Detecta texto en campos editables (comentarios, publicaciones y chat) y sugiere 
 
 Este proyecto aborda problemas complejos típicos de aplicaciones modernas:
 
-* 🧩 DOM dinámico (React en Facebook)
+* 🧩 DOM dinámico (React en redes sociales)
 * 🔄 Re-render constante que rompe referencias
 * 🎯 Reemplazo parcial sin borrar contenido
 * 🧵 Manejo de offsets inconsistentes
 * ⌨️ Preservación del cursor y foco
+* 🔍 Detección precisa de inputs reales en Instagram
 
 ---
 
@@ -66,12 +68,28 @@ Para evitar errores como:
 * borrar todo el texto
 * no aplicar cambios
 
-Se implementa un sistema híbrido:
+Se implementa un sistema híbrido robusto:
 
 * ✅ Reemplazo por posición (`offset`)
 * 🔁 Fallback por coincidencia de texto
-* 🔒 Validaciones para evitar corrupción del contenido
-* ⚡ Simulación de eventos de entrada para integrarse con el DOM de Facebook
+* 🔒 Validaciones antes de aplicar cambios
+* ⚡ Simulación de eventos de entrada (`InputEvent`)
+* 🧠 Relectura del DOM en tiempo real antes de reemplazar
+
+---
+
+## 🧩 Soporte por plataforma
+
+### 🔵 Facebook
+
+* Publicaciones
+* Comentarios
+* Chat (Messenger web)
+
+### 🟣 Instagram
+
+* Comentarios en publicaciones
+* Mensajes directos (DMs web)
 
 ---
 
@@ -87,7 +105,7 @@ Se implementa un sistema híbrido:
 
 ## 📁 Estructura del proyecto
 
-```id="c1c7y1"
+```id="p3g5yd"
 spellcheck-extension/
 │
 ├── manifest.json
@@ -112,9 +130,10 @@ spellcheck-extension/
 ## 🚀 Roadmap
 
 * [x] Soporte Facebook
-* [ ] Soporte Instagram (futura fase)
+* [x] Soporte Instagram (fase inicial)
 * [ ] Corrección gramatical avanzada
 * [ ] Reescritura con IA (tono profesional)
+* [ ] Soporte para más plataformas (Twitter/X, LinkedIn)
 * [ ] Panel de configuración
 
 ---
