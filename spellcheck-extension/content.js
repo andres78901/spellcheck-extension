@@ -1,6 +1,6 @@
 /**
- * Content script Facebook: corrección basada en el mismo string que LanguageTool (innerText).
- * Marcas flotantes (overlay) usan Rangos solo para dibujar; el reemplazo es por substring + innerText.
+ * Content script Facebook + Instagram: corrección alineada con LanguageTool (innerText).
+ * Marcas flotantes (overlay) usan Rangos solo para dibujar; el reemplazo usa replaceWordSafely (substring + innerText + eventos).
  */
 (function () {
   const utils = window.__fbSpellUtils;
@@ -11,7 +11,227 @@
 
   const SEL_EDITABLE = '[contenteditable="true"]';
   const OVERLAY_MARK = "fb-spell-overlay-mark";
-  const LOG = "[fb-spell]";
+  const LOG = "[spell-ext]";
+
+  /** @type {"facebook" | "instagram" | "unknown" | null} */
+  let cachedPlatform = null;
+
+  /** Evita adjuntar listeners dos veces al mismo nodo (complementa dataset). */
+  const weakAttachRegistered = new WeakSet();
+
+  /** Evita runCheck concurrente sobre el mismo editor (re-renders / eventos duplicados). */
+  const weakCheckInFlight = new WeakSet();
+
+  /**
+   * Hostname → plataforma. Modular para handlers por sitio.
+   * @returns {"facebook" | "instagram" | "unknown"}
+   */
+  function detectPlatform() {
+    if (cachedPlatform != null) return cachedPlatform;
+    try {
+      const host = (location.hostname || "").toLowerCase();
+      if (host === "instagram.com" || host === "www.instagram.com" || host.endsWith(".instagram.com")) {
+        cachedPlatform = "instagram";
+        return cachedPlatform;
+      }
+      if (
+        host === "facebook.com" ||
+        host === "www.facebook.com" ||
+        host === "m.facebook.com" ||
+        host.endsWith(".facebook.com") ||
+        host === "fb.com" ||
+        host.endsWith(".fb.com")
+      ) {
+        cachedPlatform = "facebook";
+        return cachedPlatform;
+      }
+      cachedPlatform = "unknown";
+      return cachedPlatform;
+    } catch {
+      cachedPlatform = "unknown";
+      return cachedPlatform;
+    }
+  }
+
+  /**
+   * @param {Element | null} el
+   */
+  function isHiddenByAriaOrStyle(el) {
+    let n = el;
+    for (let i = 0; i < 40 && n; i++) {
+      if (n instanceof HTMLElement) {
+        if (n.getAttribute("aria-hidden") === "true") return true;
+        try {
+          const st = getComputedStyle(n);
+          if (st.display === "none" || st.visibility === "hidden" || st.opacity === "0") return true;
+        } catch {
+          /* ignore */
+        }
+      }
+      n = n.parentElement;
+    }
+    return false;
+  }
+
+  /**
+   * Facebook: cualquier composer contentEditable razonablemente visible.
+   * @param {HTMLElement} el
+   */
+  function isValidFacebookInput(el) {
+    if (!(el instanceof HTMLElement)) return false;
+    if (!el.isConnected) return false;
+    if (el.isContentEditable !== true) return false;
+    if (isHiddenByAriaOrStyle(el)) return false;
+    let inner;
+    try {
+      inner = el.innerText;
+    } catch {
+      return false;
+    }
+    if (inner == null) return false;
+    if (el.offsetParent !== null) return true;
+    try {
+      const st = getComputedStyle(el);
+      const pos = st.position;
+      if ((pos === "fixed" || pos === "sticky") && st.display !== "none") {
+        const r = el.getBoundingClientRect();
+        return r.width > 1 && r.height > 1;
+      }
+    } catch {
+      /* ignore */
+    }
+    return false;
+  }
+
+  /**
+   * Instagram: solo compositores reales (DM / comentarios).
+   * Nota: muchos compositores van en `position:fixed` → `offsetParent === null`; se admite rect+estilo.
+   * @param {HTMLElement} el
+   */
+  function isInstagramComposerContext(el) {
+    if (!(el instanceof HTMLElement)) return false;
+    const path = (location.pathname || "").toLowerCase();
+    const selfLab = (el.getAttribute("aria-label") || "").toLowerCase();
+    if (selfLab.includes("search") || selfLab.includes("buscar")) return false;
+
+    let n = el;
+    for (let d = 0; d < 30 && n; d++) {
+      const tid = (n.getAttribute && n.getAttribute("data-testid")) || "";
+      if (/comment|composer|reply|message|thread|direct|inbox|editable|caption/i.test(tid)) return true;
+      n = n.parentElement;
+    }
+
+    if (path.includes("/direct/")) {
+      return el.getAttribute("role") === "textbox" || !!el.closest('div[role="presentation"]');
+    }
+
+    if (el.closest("article")) return true;
+
+    const modal = el.closest('[aria-modal="true"]');
+    if (modal) return true;
+
+    return false;
+  }
+
+  /**
+   * Condiciones estrictas para Instagram (evita contentEditable “falso” de overlays).
+   * @param {HTMLElement} el
+   */
+  function isValidInstagramInput(el) {
+    if (!(el instanceof HTMLElement)) return false;
+    if (!el.isConnected) return false;
+    if (el.isContentEditable !== true) return false;
+
+    const visibleTraditional = el.offsetParent !== null;
+    let visibleFixed = false;
+    try {
+      const st = getComputedStyle(el);
+      if ((st.position === "fixed" || st.position === "sticky") && st.display !== "none" && st.visibility !== "hidden") {
+        const r = el.getBoundingClientRect();
+        visibleFixed = r.width > 1 && r.height > 1;
+      }
+    } catch {
+      visibleFixed = false;
+    }
+    if (!visibleTraditional && !visibleFixed) return false;
+
+    if (isHiddenByAriaOrStyle(el)) return false;
+
+    let inner;
+    try {
+      inner = el.innerText;
+    } catch {
+      return false;
+    }
+    if (inner == null || inner === undefined) return false;
+
+    const hasText = String(inner).trim().length > 0;
+    const ae = document.activeElement;
+    const focused =
+      ae === el || (ae instanceof Node && el.contains(ae));
+    if (!focused && !hasText) return false;
+
+    if (!isInstagramComposerContext(el)) return false;
+
+    return true;
+  }
+
+  /**
+   * Recorre `scope` y devuelve editables válidos según plataforma.
+   * Incluye el propio nodo si es contentEditable (MutationObserver a veces inserta solo el composer).
+   * @param {ParentNode | HTMLElement} scope
+   * @returns {HTMLElement[]}
+   */
+  function getEditableElements(scope) {
+    const platform = detectPlatform();
+    /** @type {HTMLElement[]} */
+    const out = [];
+
+    const maybePush = (/** @type {HTMLElement} */ el) => {
+      if (platform === "instagram") {
+        if (isValidInstagramInput(el)) out.push(el);
+      } else if (platform === "facebook") {
+        if (isValidFacebookInput(el)) out.push(el);
+      } else if (isValidFacebookInput(el)) {
+        out.push(el);
+      }
+    };
+
+    if (scope instanceof HTMLElement && scope.matches?.(SEL_EDITABLE)) {
+      maybePush(scope);
+    }
+
+    const root = scope instanceof HTMLElement ? scope : document;
+    root.querySelectorAll(SEL_EDITABLE).forEach((node) => {
+      if (node instanceof HTMLElement) maybePush(node);
+    });
+    return out;
+  }
+
+  /**
+   * Entrada unificada tras input/focus: registra editor y agenda chequeo.
+   * @param {HTMLElement} element
+   */
+  function handleInput(element) {
+    if (!(element instanceof HTMLElement)) return;
+    const platform = detectPlatform();
+    console.info(LOG, "handleInput", { platform, tag: element.tagName, hasRootId: !!element.dataset.fbSpellRootId });
+    scheduleCheck(element);
+  }
+
+  /**
+   * Sube desde el target del evento hasta el ancestro contentEditable (Instagram/Lexical anida nodos).
+   * @param {EventTarget | null} start
+   * @returns {HTMLElement | null}
+   */
+  function findContentEditableRootFromEventTarget(start) {
+    let n = start instanceof Node ? start : null;
+    while (n) {
+      if (n instanceof HTMLElement && n.isContentEditable) return n;
+      n = n.parentElement;
+    }
+    return null;
+  }
 
   /** @type {{ enabled: boolean, language: string }} */
   let prefs = { enabled: true, language: "auto" };
@@ -757,6 +977,7 @@
       const fullBeforeSync = getPlainText(contentEditable);
 
       console.info(LOG, "replaceWordSafely (pre-rAF)", {
+        platform: detectPlatform(),
         matchIndex,
         offset,
         length,
@@ -873,8 +1094,10 @@
                 const preEv = dispatchReactFriendlyInputBurstPhased(contentEditable, replacement, { phase: "beforeDom" });
                 eventsFinal.push(...preEv.map((e) => `pre:${e}`));
 
+                // Instagram re-render: re-leemos innerText justo antes de mutar; el plan ya validó offset/slice.
                 const beforeAssign = getPlainText(contentEditable);
                 contentEditable.innerText = newText;
+                // InputEvent (insertReplacementText) en fase afterDom notifica al framework (ver dispatchReactFriendlyInputBurstPhased).
                 after = getPlainText(contentEditable);
                 console.info(LOG, "replaceWordSafely: post-innerText (antes de ráfaga input)", {
                   innerTextMatchesExpected: after === newText,
@@ -1008,6 +1231,13 @@
               expectedWord: match.originalSlice,
               matchIndex: match.matchIndex,
             }).then((res) => {
+              console.info(LOG, "Reemplazo aplicado", {
+                platform: detectPlatform(),
+                ok: res.ok,
+                strategy: res.strategy,
+                uiPath: res.uiPath,
+                reason: res.reason,
+              });
               hideTooltip();
               spellStateByRoot.delete(root);
               clearOverlayMarksForRoot(root);
@@ -1133,54 +1363,73 @@
     if (composingByRoot.get(root)) {
       return;
     }
-
-    removeLegacySpansInside(root);
-    clearOverlayMarksForRoot(root);
-
-    const text = getPlainText(root);
-
-    if (!text.trim()) {
-      spellStateByRoot.delete(root);
+    if (weakCheckInFlight.has(root)) {
+      console.info(LOG, "runCheck omitido (ya en vuelo)", { platform: detectPlatform() });
       return;
     }
+    weakCheckInFlight.add(root);
+    try {
+      removeLegacySpansInside(root);
+      clearOverlayMarksForRoot(root);
 
-    const key = utils.cacheKey(text, prefs.language);
-    let normalized;
-
-    if (resultCache.has(key)) {
-      const cached = resultCache.get(key);
-      normalized = cached ?? { matches: [], detected: undefined };
-    } else {
-      /** @type {any} */
-      const resp = await chrome.runtime.sendMessage({
-        type: "SPELLCHECK_CHECK",
-        payload: { text, language: prefs.language },
+      const text = getPlainText(root);
+      console.info(LOG, "Texto extraído (innerText)", {
+        platform: detectPlatform(),
+        len: text.length,
+        sample: text.slice(0, 80),
       });
 
-      if (!resp?.ok) {
-        console.warn(LOG, "Error API:", resp?.error ?? resp);
+      if (!text.trim()) {
         spellStateByRoot.delete(root);
         return;
       }
 
-      normalized = utils.normalizeResponse(resp.data);
-      resultCache.set(key, normalized);
-      pruneCache();
+      const key = utils.cacheKey(text, prefs.language);
+      let normalized;
 
-    }
+      if (resultCache.has(key)) {
+        const cached = resultCache.get(key);
+        normalized = cached ?? { matches: [], detected: undefined };
+      } else {
+        /** @type {any} */
+        const resp = await chrome.runtime.sendMessage({
+          type: "SPELLCHECK_CHECK",
+          payload: { text, language: prefs.language },
+        });
 
-    const valid = prepareMatchesForUi(text, normalized.matches);
+        if (!resp?.ok) {
+          console.warn(LOG, "Error API:", resp?.error ?? resp);
+          spellStateByRoot.delete(root);
+          return;
+        }
 
-    if (valid.length === 0) {
+        normalized = utils.normalizeResponse(resp.data);
+        resultCache.set(key, normalized);
+        pruneCache();
+      }
+
+      const valid = prepareMatchesForUi(text, normalized.matches);
+
+      if (valid.length === 0) {
+        spellStateByRoot.delete(root);
+        return;
+      }
+
+      const rootId = ensureRootId(root);
+      spellStateByRoot.set(root, { snapshotText: text, matches: valid, rootId });
+      renderOverlayMarks(root, valid, text);
+
+      console.info(LOG, "Errores encontrados (LanguageTool)", {
+        platform: detectPlatform(),
+        count: valid.length,
+        matches: valid,
+      });
+    } catch (err) {
+      console.error(LOG, "runCheck excepción", err);
       spellStateByRoot.delete(root);
-      return;
+    } finally {
+      weakCheckInFlight.delete(root);
     }
-
-    const rootId = ensureRootId(root);
-    spellStateByRoot.set(root, { snapshotText: text, matches: valid, rootId });
-    renderOverlayMarks(root, valid, text);
-
-    console.info(LOG, "Errores detectados:", valid.length, valid);
   }
 
   /**
@@ -1204,8 +1453,25 @@
    */
   function attachRoot(el) {
     if (!(el instanceof HTMLElement)) return;
-    if (el.dataset.fbSpellAttached === "1") return;
+    if (el.dataset.fbSpellAttached === "1" || weakAttachRegistered.has(el)) return;
+
+    const platform = detectPlatform();
+    if (platform === "instagram") {
+      if (!isValidInstagramInput(el)) return;
+    } else if (platform === "facebook") {
+      if (!isValidFacebookInput(el)) return;
+    } else if (!isValidFacebookInput(el)) {
+      return;
+    }
+
     el.dataset.fbSpellAttached = "1";
+    weakAttachRegistered.add(el);
+
+    console.info(LOG, "Input detectado (listeners adjuntos)", {
+      platform,
+      tag: el.tagName,
+      path: (location.pathname || "").slice(0, 64),
+    });
 
     composingByRoot.set(el, false);
 
@@ -1220,7 +1486,7 @@
       "compositionend",
       () => {
         composingByRoot.set(el, false);
-        scheduleCheck(el);
+        handleInput(el);
       },
       true
     );
@@ -1231,27 +1497,67 @@
         if (composingByRoot.get(el)) return;
         clearOverlayMarksForRoot(el);
         spellStateByRoot.delete(el);
-        scheduleCheck(el);
+        handleInput(el);
       },
       true
     );
   }
 
   function scanAndAttach(node) {
-    const r = node instanceof HTMLElement ? node : document;
-    r.querySelectorAll(SEL_EDITABLE).forEach((el) => attachRoot(/** @type {HTMLElement} */ (el)));
+    const scope = node instanceof HTMLElement ? node : document;
+    getEditableElements(scope).forEach((el) => attachRoot(el));
   }
 
   const mo = new MutationObserver((muts) => {
     for (const m of muts) {
       m.addedNodes.forEach((n) => {
         if (n instanceof HTMLElement) {
-          if (n.matches?.(SEL_EDITABLE)) attachRoot(n);
-          scanAndAttach(n);
+          getEditableElements(n).forEach((el) => attachRoot(el));
         }
       });
     }
   });
+
+  /**
+   * Instagram re-monta nodos; priorizamos el árbol contentEditable desde el target de focusin.
+   * @param {FocusEvent} e
+   */
+  function onDocumentFocusCapture(e) {
+    const t = findContentEditableRootFromEventTarget(e.target);
+    if (!t) return;
+    const platform = detectPlatform();
+    if (platform === "instagram") {
+      if (isValidInstagramInput(t)) {
+        attachRoot(t);
+        handleInput(t);
+      }
+    } else if (platform === "facebook") {
+      if (isValidFacebookInput(t)) {
+        attachRoot(t);
+        handleInput(t);
+      }
+    }
+  }
+
+  /**
+   * Refuerzo ante IME / frameworks: el nodo activo puede no ser el target del evento.
+   */
+  function onDocumentInputCapture() {
+    const ae = document.activeElement;
+    if (!(ae instanceof HTMLElement) || ae.isContentEditable !== true) return;
+    const platform = detectPlatform();
+    if (platform === "instagram") {
+      if (isValidInstagramInput(ae)) {
+        attachRoot(ae);
+        handleInput(ae);
+      }
+    } else if (platform === "facebook") {
+      if (isValidFacebookInput(ae)) {
+        attachRoot(ae);
+        handleInput(ae);
+      }
+    }
+  }
 
   function onScrollOrResize() {
     document.querySelectorAll(SEL_EDITABLE).forEach((el) => {
@@ -1291,8 +1597,11 @@
   });
 
   loadPrefs();
+  console.info(LOG, "Plataforma detectada", { platform: detectPlatform(), host: location.hostname });
   scanAndAttach(document);
   mo.observe(document.documentElement, { childList: true, subtree: true });
+  document.addEventListener("focusin", onDocumentFocusCapture, true);
+  document.addEventListener("input", onDocumentInputCapture, true);
 
-  console.info(LOG, "Activo: overlay + background API (sin innerHTML en contentEditable).");
+  console.info(LOG, "Activo: overlay + LanguageTool (innerText + replaceWordSafely; Instagram + Facebook).");
 })();
