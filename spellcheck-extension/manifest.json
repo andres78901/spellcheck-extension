@@ -8,6 +8,8 @@
     "https://www.facebook.com/*",
     "https://facebook.com/*",
     "https://m.facebook.com/*",
+    "https://www.instagram.com/*",
+    "https://instagram.com/*",
     "https://api.languagetool.org/*"
   ],
   "background": {
@@ -22,7 +24,9 @@
       "matches": [
         "https://www.facebook.com/*",
         "https://facebook.com/*",
-        "https://m.facebook.com/*"
+        "https://m.facebook.com/*",
+        "https://www.instagram.com/*",
+        "https://instagram.com/*"
       ],
       "js": ["utils/spellcheck.js", "content.js"],
       "css": ["styles.css"],
