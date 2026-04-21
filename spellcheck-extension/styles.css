@@ -1,0 +1,66 @@
+/* Marcas flotantes (no forman parte del contentEditable) */
+.fb-spell-overlay-mark {
+  position: fixed;
+  z-index: 2147483640;
+  box-sizing: border-box;
+  pointer-events: auto;
+  border-bottom: 2px solid #e02424;
+  background: transparent;
+  cursor: pointer;
+}
+
+.fb-spell-overlay-mark:hover {
+  background: rgba(224, 36, 36, 0.06);
+}
+
+/* Tooltip ligero */
+.fb-spell-tooltip {
+  position: fixed;
+  z-index: 2147483646;
+  max-width: 280px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: #1c1e21;
+  color: #f0f2f5;
+  font: 13px/1.35 system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.fb-spell-tooltip-title {
+  font-size: 11px;
+  opacity: 0.75;
+  margin-bottom: 6px;
+}
+
+.fb-spell-tooltip-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.fb-spell-suggestion {
+  display: inline-block;
+  padding: 4px 8px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+  cursor: pointer;
+  border: 1px solid transparent;
+}
+
+.fb-spell-suggestion:hover {
+  background: rgba(255, 255, 255, 0.18);
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
+.fb-spell-tooltip-close {
+  margin-top: 8px;
+  font-size: 11px;
+  opacity: 0.65;
+  cursor: pointer;
+}
+
+.fb-spell-tooltip-close:hover {
+  opacity: 1;
+}
