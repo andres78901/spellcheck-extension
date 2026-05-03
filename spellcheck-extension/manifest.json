@@ -29,7 +29,7 @@
         "https://instagram.com/*"
       ],
       "js": ["utils/spellcheck.js", "content.js"],
-      "css": ["styles.css"],
+      "css": ["css/theme-vars.css", "styles.css"],
       "run_at": "document_idle",
       "all_frames": false
     }

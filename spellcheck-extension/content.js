@@ -12,6 +12,7 @@
   const SEL_EDITABLE = '[contenteditable="true"]';
   const OVERLAY_MARK = "fb-spell-overlay-mark";
   const LOG = "[spell-ext]";
+  const POPUP_THEME_VALUES = ["system", "light", "dark"];
 
   /** @type {"facebook" | "instagram" | "unknown" | null} */
   let cachedPlatform = null;
@@ -268,12 +269,25 @@
   /** @type {WeakMap<HTMLElement, boolean>} */
   const composingByRoot = new WeakMap();
 
+  /**
+   * Alinea el tema del tooltip con la opción "Apariencia" del popup (`fbSpellPopupTheme`).
+   * @param {string} [theme]
+   */
+  function applyPagePopupTheme(theme) {
+    const t =
+      typeof theme === "string" && POPUP_THEME_VALUES.includes(theme) ? theme : "system";
+    document.documentElement.setAttribute("data-fb-spell-theme", t);
+  }
+
+  applyPagePopupTheme("system");
 
   function loadPrefs() {
-    chrome.storage.local.get(["fbSpellEnabled", "fbSpellLanguage"], (r) => {
+    chrome.storage.local.get(["fbSpellEnabled", "fbSpellLanguage", "fbSpellPopupTheme"], (r) => {
       if (chrome.runtime.lastError) return;
       prefs.enabled = r.fbSpellEnabled !== false;
       prefs.language = typeof r.fbSpellLanguage === "string" && r.fbSpellLanguage ? r.fbSpellLanguage : "auto";
+      const th = typeof r.fbSpellPopupTheme === "string" ? r.fbSpellPopupTheme : "system";
+      applyPagePopupTheme(th);
     });
   }
 
@@ -362,7 +376,8 @@
 
     tip.appendChild(actions);
 
-    const close = document.createElement("div");
+    const close = document.createElement("button");
+    close.type = "button";
     close.className = "fb-spell-tooltip-close";
     close.textContent = "Cerrar";
     close.addEventListener("click", (e) => {
@@ -1593,6 +1608,10 @@
       document.querySelectorAll(SEL_EDITABLE).forEach((el) => {
         if (el instanceof HTMLElement) spellStateByRoot.delete(el);
       });
+    }
+    if ("fbSpellPopupTheme" in changes) {
+      const v = changes.fbSpellPopupTheme?.newValue;
+      applyPagePopupTheme(typeof v === "string" ? v : "system");
     }
   });
 
