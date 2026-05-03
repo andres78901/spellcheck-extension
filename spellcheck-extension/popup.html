@@ -1,60 +1,44 @@
 <!doctype html>
-<html lang="es">
+<html lang="es" data-theme="system">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Corrector Facebook</title>
-    <style>
-      body {
-        margin: 0;
-        padding: 12px 14px;
-        width: 260px;
-        font: 13px/1.4 system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
-        color: #1c1e21;
-        background: #f7f8fa;
-      }
-      h1 {
-        font-size: 14px;
-        margin: 0 0 10px;
-      }
-      label.row {
-        display: flex;
-        align-items: center;
-        gap: 8px;
-        margin-bottom: 10px;
-      }
-      select {
-        width: 100%;
-        padding: 6px 8px;
-        border-radius: 6px;
-        border: 1px solid #ccd0d5;
-        background: #fff;
-      }
-      .hint {
-        font-size: 11px;
-        color: #65676b;
-        margin-top: 8px;
-      }
-    </style>
+    <link rel="stylesheet" href="css/popup.css" />
   </head>
   <body>
-    <h1>Corrector Facebook</h1>
-    <label class="row">
-      <input type="checkbox" id="enabled" />
-      Activar corrección
-    </label>
-    <label class="row" for="language">Idioma</label>
-    <select id="language" aria-label="Idioma">
-      <option value="auto">Automático</option>
-      <option value="es">Español</option>
-      <option value="en-US">Inglés (US)</option>
-      <option value="pt-BR">Portugués (Brasil)</option>
-      <option value="fr">Francés</option>
-    </select>
-    <p class="hint">
-      Usa LanguageTool público. Los textos se envían a su API al escribir (debounce 500 ms). El subrayado es una capa
-      flotante (no se reescribe innerHTML del editor), para no romper React ni el cursor.
-    </p>
+    <main class="popup-shell">
+      <header class="popup-header">
+        <h1>Corrector Facebook</h1>
+        <button type="button" id="popupClose" class="popup-close" title="Cerrar" aria-label="Cerrar popup">
+          <span aria-hidden="true">×</span>
+        </button>
+      </header>
+      <div class="toggle-3d">
+        <label class="row">
+          <input type="checkbox" id="enabled" />
+          Activar corrección
+        </label>
+      </div>
+      <label class="row" for="popupTheme">Apariencia</label>
+      <select id="popupTheme" class="control-3d" aria-label="Apariencia del popup">
+        <option value="system">Automática (sistema)</option>
+        <option value="light">Claro</option>
+        <option value="dark">Oscuro</option>
+      </select>
+      <label class="row" for="language">Idioma</label>
+      <select id="language" class="control-3d" aria-label="Idioma">
+        <option value="auto">Automático</option>
+        <option value="es">Español</option>
+        <option value="en-US">Inglés (US)</option>
+        <option value="pt-BR">Portugués (Brasil)</option>
+        <option value="fr">Francés</option>
+      </select>
+      <p class="hint">
+        Usa LanguageTool público. Los textos se envían a su API al escribir (debounce 500 ms). El subrayado es una capa
+        flotante (no se reescribe innerHTML del editor), para no romper React ni el cursor.
+      </p>
+    </main>
     <script src="popup.js"></script>
   </body>
 </html>
